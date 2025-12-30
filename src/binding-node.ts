@@ -1,47 +1,13 @@
 import { createRequire } from 'node:module';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { LoadModelOptions, GenerateOptions, GenerateResult } from './binding.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
 // Load the native binding
 const binding = require(join(__dirname, '..', 'build', 'Release', 'llama_binding.node')) as NativeBinding;
-
-export interface LoadModelOptions {
-  modelPath: string;
-  gpuLayers?: number;
-  contextSize?: number;
-  threads?: number;
-  debug?: boolean;
-  /**
-   * Chat template to use for formatting messages.
-   * - "auto" (default): Use the template embedded in the GGUF model file
-   * - Template name: Use a specific built-in template (e.g., "llama3", "chatml", "gemma")
-   */
-  chatTemplate?: string;
-}
-
-export interface ChatMessage {
-  role: string;
-  content: string;
-}
-
-export interface GenerateOptions {
-  messages: ChatMessage[];
-  maxTokens?: number;
-  temperature?: number;
-  topP?: number;
-  topK?: number;
-  stopSequences?: string[];
-}
-
-export interface GenerateResult {
-  text: string;
-  promptTokens: number;
-  completionTokens: number;
-  finishReason: 'stop' | 'length' | 'error';
-}
 
 interface NativeBinding {
   loadModel(options: LoadModelOptions, callback: (error: string | null, handle: number | null) => void): void;

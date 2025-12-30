@@ -235,7 +235,8 @@ npm run build
 - `npm run test:run` - Run all tests once
 - `npm run test:unit` - Run unit tests
 - `npm run test:integration` - Run integration tests
-- `npm run test:e2e` - Run end-to-end tests
+- `npm run test:e2e` - Run end-to-end tests in Node.js
+- `bun --bun run test:e2e` - Run end-to-end tests in Bun
 - `npm run test:coverage` - Run tests with coverage
 
 ## License

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { LanguageModelV3Message } from "@ai-sdk/provider";
 
 // Mock the native binding module before importing the language model
-vi.mock("../../src/native-binding.js", () => ({
+vi.mock("../../src/binding.js", () => ({
   loadModel: vi.fn().mockResolvedValue(1),
   unloadModel: vi.fn().mockReturnValue(true),
   generate: vi.fn().mockResolvedValue({
@@ -29,7 +29,7 @@ vi.mock("../../src/native-binding.js", () => ({
 
 // Import after mocking
 import { LlamaCppLanguageModel } from "../../src/llama-cpp-language-model.js";
-import * as nativeBinding from "../../src/native-binding.js";
+import * as nativeBinding from "../../src/binding.js";
 
 describe("LlamaCppLanguageModel Integration", () => {
   let model: LlamaCppLanguageModel;

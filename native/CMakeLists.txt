@@ -37,11 +37,40 @@ include_directories(${NODE_ADDON_API_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../llama.cpp/include)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../llama.cpp/ggml/include)
 
-# Build the native addon
+# Build the native addon for Node.js
 add_library(${PROJECT_NAME} SHARED
     binding.cpp
     llama-wrapper.cpp
 )
+
+# Build shared library for Bun FFI
+add_library(llama_ffi SHARED
+    c-api.cpp
+    llama-wrapper.cpp
+)
+
+set_target_properties(llama_ffi PROPERTIES
+    OUTPUT_NAME "llama_ffi"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/../build/Release"
+)
+
+target_include_directories(llama_ffi PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../llama.cpp/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../llama.cpp/ggml/include
+)
+
+target_link_libraries(llama_ffi PRIVATE
+    llama
+    ggml
+)
+
+if(APPLE)
+    target_link_libraries(llama_ffi PRIVATE
+        "-framework Foundation"
+        "-framework Metal"
+        "-framework MetalKit"
+    )
+endif()
 
 # Set output name and extension
 set_target_properties(${PROJECT_NAME} PROPERTIES

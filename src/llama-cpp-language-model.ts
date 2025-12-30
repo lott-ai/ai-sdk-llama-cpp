@@ -20,7 +20,7 @@ import {
   type LoadModelOptions,
   type GenerateOptions,
   type ChatMessage,
-} from "./native-binding.js";
+} from "./binding.js";
 
 export interface LlamaCppModelConfig {
   modelPath: string;
