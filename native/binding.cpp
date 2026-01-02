@@ -1,50 +1,49 @@
-#include <napi.h>
 #include "llama-wrapper.h"
-#include <memory>
-#include <unordered_map>
-#include <mutex>
+
+#include <napi.h>
+
 #include <atomic>
+#include <memory>
+#include <mutex>
+#include <unordered_map>
 
 // Global state for managing models
 static std::unordered_map<int, std::unique_ptr<llama_wrapper::LlamaModel>> g_models;
-static std::mutex g_models_mutex;
-static std::atomic<int> g_next_handle{1};
+static std::mutex                                                          g_models_mutex;
+static std::atomic<int>                                                    g_next_handle{ 1 };
 
 // ============================================================================
 // Async Workers
 // ============================================================================
 
 class LoadModelWorker : public Napi::AsyncWorker {
-public:
-    LoadModelWorker(
-        Napi::Function& callback,
-        const std::string& model_path,
-        int n_gpu_layers,
-        int n_ctx,
-        int n_threads,
-        bool debug,
-        const std::string& chat_template,
-        bool embedding
-    )
-        : Napi::AsyncWorker(callback)
-        , model_path_(model_path)
-        , n_gpu_layers_(n_gpu_layers)
-        , n_ctx_(n_ctx)
-        , n_threads_(n_threads)
-        , debug_(debug)
-        , chat_template_(chat_template)
-        , embedding_(embedding)
-        , handle_(-1)
-        , success_(false)
-    {}
+  public:
+    LoadModelWorker(Napi::Function &    callback,
+                    const std::string & model_path,
+                    int                 n_gpu_layers,
+                    int                 n_ctx,
+                    int                 n_threads,
+                    bool                debug,
+                    const std::string & chat_template,
+                    bool                embedding) :
+        Napi::AsyncWorker(callback),
+        model_path_(model_path),
+        n_gpu_layers_(n_gpu_layers),
+        n_ctx_(n_ctx),
+        n_threads_(n_threads),
+        debug_(debug),
+        chat_template_(chat_template),
+        embedding_(embedding),
+        handle_(-1),
+        success_(false) {}
 
     void Execute() override {
         auto model = std::make_unique<llama_wrapper::LlamaModel>();
 
         llama_wrapper::ModelParams model_params;
-        model_params.model_path = model_path_;
-        model_params.n_gpu_layers = n_gpu_layers_;
-        model_params.debug = debug_;
+        model_params.model_path    = model_path_;
+        model_params.n_gpu_layers  = n_gpu_layers_;
+        model_params.debug         = debug_;
         model_params.chat_template = chat_template_;
 
         if (!model->load(model_params)) {
@@ -53,7 +52,7 @@ public:
         }
 
         llama_wrapper::ContextParams ctx_params;
-        ctx_params.n_ctx = n_ctx_;
+        ctx_params.n_ctx     = n_ctx_;
         ctx_params.n_threads = n_threads_;
         ctx_params.embedding = embedding_;
 
@@ -74,52 +73,43 @@ public:
 
     void OnOK() override {
         Napi::HandleScope scope(Env());
-        Callback().Call({
-            Env().Null(),
-            Napi::Number::New(Env(), handle_)
-        });
+        Callback().Call({ Env().Null(), Napi::Number::New(Env(), handle_) });
     }
 
-    void OnError(const Napi::Error& e) override {
+    void OnError(const Napi::Error & e) override {
         Napi::HandleScope scope(Env());
-        Callback().Call({
-            Napi::String::New(Env(), e.Message()),
-            Env().Null()
-        });
+        Callback().Call({ Napi::String::New(Env(), e.Message()), Env().Null() });
     }
 
-private:
+  private:
     std::string model_path_;
-    int n_gpu_layers_;
-    int n_ctx_;
-    int n_threads_;
-    bool debug_;
+    int         n_gpu_layers_;
+    int         n_ctx_;
+    int         n_threads_;
+    bool        debug_;
     std::string chat_template_;
-    bool embedding_;
-    int handle_;
-    bool success_;
+    bool        embedding_;
+    int         handle_;
+    bool        success_;
 };
 
 class GenerateWorker : public Napi::AsyncWorker {
-public:
-    GenerateWorker(
-        Napi::Function& callback,
-        int handle,
-        const std::vector<llama_wrapper::ChatMessage>& messages,
-        const llama_wrapper::GenerationParams& params
-    )
-        : Napi::AsyncWorker(callback)
-        , handle_(handle)
-        , messages_(messages)
-        , params_(params)
-    {}
+  public:
+    GenerateWorker(Napi::Function &                                callback,
+                   int                                             handle,
+                   const std::vector<llama_wrapper::ChatMessage> & messages,
+                   const llama_wrapper::GenerationParams &         params) :
+        Napi::AsyncWorker(callback),
+        handle_(handle),
+        messages_(messages),
+        params_(params) {}
 
     void Execute() override {
-        llama_wrapper::LlamaModel* model = nullptr;
+        llama_wrapper::LlamaModel * model = nullptr;
 
         {
             std::lock_guard<std::mutex> lock(g_models_mutex);
-            auto it = g_models.find(handle_);
+            auto                        it = g_models.find(handle_);
             if (it == g_models.end()) {
                 SetError("Invalid model handle");
                 return;
@@ -139,64 +129,54 @@ public:
         result.Set("completionTokens", Napi::Number::New(Env(), result_.completion_tokens));
         result.Set("finishReason", Napi::String::New(Env(), result_.finish_reason));
 
-        Callback().Call({Env().Null(), result});
+        Callback().Call({ Env().Null(), result });
     }
 
-private:
-    int handle_;
+  private:
+    int                                     handle_;
     std::vector<llama_wrapper::ChatMessage> messages_;
-    llama_wrapper::GenerationParams params_;
-    llama_wrapper::GenerationResult result_;
+    llama_wrapper::GenerationParams         params_;
+    llama_wrapper::GenerationResult         result_;
 };
 
 // Thread-safe function context for streaming
 class StreamContext {
-public:
-    StreamContext(Napi::Env env, Napi::Function callback)
-        : callback_(Napi::Persistent(callback))
-        , env_(env)
-    {}
+  public:
+    StreamContext(Napi::Env env, Napi::Function callback) : callback_(Napi::Persistent(callback)), env_(env) {}
 
-    Napi::FunctionReference callback_;
-    Napi::Env env_;
+    Napi::FunctionReference         callback_;
+    Napi::Env                       env_;
     llama_wrapper::GenerationResult result_;
 };
 
-void StreamCallJS(Napi::Env env, Napi::Function callback, StreamContext* context, const char* token) {
+void StreamCallJS(Napi::Env env, Napi::Function callback, StreamContext * context, const char * token) {
     if (env != nullptr && callback != nullptr) {
         if (token != nullptr) {
             // Streaming token
-            callback.Call({
-                env.Null(),
-                Napi::String::New(env, "token"),
-                Napi::String::New(env, token)
-            });
+            callback.Call({ env.Null(), Napi::String::New(env, "token"), Napi::String::New(env, token) });
         }
     }
 }
 
 class StreamGenerateWorker : public Napi::AsyncWorker {
-public:
-    StreamGenerateWorker(
-        Napi::Function& callback,
-        int handle,
-        const std::vector<llama_wrapper::ChatMessage>& messages,
-        const llama_wrapper::GenerationParams& params,
-        Napi::Function& token_callback
-    )
-        : Napi::AsyncWorker(callback)
-        , handle_(handle)
-        , messages_(messages)
-        , params_(params)
-        , token_callback_(Napi::Persistent(token_callback))
-    {}
+  public:
+    StreamGenerateWorker(Napi::Function &                                callback,
+                         int                                             handle,
+                         const std::vector<llama_wrapper::ChatMessage> & messages,
+                         const llama_wrapper::GenerationParams &         params,
+                         Napi::Function &                                token_callback) :
+        Napi::AsyncWorker(callback),
+        handle_(handle),
+        messages_(messages),
+        params_(params),
+        token_callback_(Napi::Persistent(token_callback)) {}
 
     void Execute() override {
-        llama_wrapper::LlamaModel* model = nullptr;
+        llama_wrapper::LlamaModel * model = nullptr;
 
         {
             std::lock_guard<std::mutex> lock(g_models_mutex);
-            auto it = g_models.find(handle_);
+            auto                        it = g_models.find(handle_);
             if (it == g_models.end()) {
                 SetError("Invalid model handle");
                 return;
@@ -205,7 +185,7 @@ public:
         }
 
         // Collect tokens during generation
-        result_ = model->generate_streaming(messages_, params_, [this](const std::string& token) {
+        result_ = model->generate_streaming(messages_, params_, [this](const std::string & token) {
             std::lock_guard<std::mutex> lock(tokens_mutex_);
             tokens_.push_back(token);
             return true;
@@ -216,10 +196,8 @@ public:
         Napi::HandleScope scope(Env());
 
         // Call token callback for each collected token
-        for (const auto& token : tokens_) {
-            token_callback_.Call({
-                Napi::String::New(Env(), token)
-            });
+        for (const auto & token : tokens_) {
+            token_callback_.Call({ Napi::String::New(Env(), token) });
         }
 
         // Final callback with result
@@ -229,37 +207,32 @@ public:
         result.Set("completionTokens", Napi::Number::New(Env(), result_.completion_tokens));
         result.Set("finishReason", Napi::String::New(Env(), result_.finish_reason));
 
-        Callback().Call({Env().Null(), result});
+        Callback().Call({ Env().Null(), result });
     }
 
-private:
-    int handle_;
+  private:
+    int                                     handle_;
     std::vector<llama_wrapper::ChatMessage> messages_;
-    llama_wrapper::GenerationParams params_;
-    llama_wrapper::GenerationResult result_;
-    Napi::FunctionReference token_callback_;
-    std::vector<std::string> tokens_;
-    std::mutex tokens_mutex_;
+    llama_wrapper::GenerationParams         params_;
+    llama_wrapper::GenerationResult         result_;
+    Napi::FunctionReference                 token_callback_;
+    std::vector<std::string>                tokens_;
+    std::mutex                              tokens_mutex_;
 };
 
 class EmbedWorker : public Napi::AsyncWorker {
-public:
-    EmbedWorker(
-        Napi::Function& callback,
-        int handle,
-        const std::vector<std::string>& texts
-    )
-        : Napi::AsyncWorker(callback)
-        , handle_(handle)
-        , texts_(texts)
-    {}
+  public:
+    EmbedWorker(Napi::Function & callback, int handle, const std::vector<std::string> & texts) :
+        Napi::AsyncWorker(callback),
+        handle_(handle),
+        texts_(texts) {}
 
     void Execute() override {
-        llama_wrapper::LlamaModel* model = nullptr;
+        llama_wrapper::LlamaModel * model = nullptr;
 
         {
             std::lock_guard<std::mutex> lock(g_models_mutex);
-            auto it = g_models.find(handle_);
+            auto                        it = g_models.find(handle_);
             if (it == g_models.end()) {
                 SetError("Invalid model handle");
                 return;
@@ -268,7 +241,7 @@ public:
         }
 
         result_ = model->embed(texts_);
-        
+
         if (result_.embeddings.empty() && !texts_.empty()) {
             SetError("Failed to generate embeddings");
             return;
@@ -281,7 +254,7 @@ public:
         // Create embeddings array
         Napi::Array embeddings_arr = Napi::Array::New(Env(), result_.embeddings.size());
         for (size_t i = 0; i < result_.embeddings.size(); i++) {
-            const auto& emb = result_.embeddings[i];
+            const auto &       emb       = result_.embeddings[i];
             Napi::Float32Array embedding = Napi::Float32Array::New(Env(), emb.size());
             for (size_t j = 0; j < emb.size(); j++) {
                 embedding[j] = emb[j];
@@ -293,12 +266,12 @@ public:
         result.Set("embeddings", embeddings_arr);
         result.Set("totalTokens", Napi::Number::New(Env(), result_.total_tokens));
 
-        Callback().Call({Env().Null(), result});
+        Callback().Call({ Env().Null(), result });
     }
 
-private:
-    int handle_;
-    std::vector<std::string> texts_;
+  private:
+    int                            handle_;
+    std::vector<std::string>       texts_;
     llama_wrapper::EmbeddingResult result_;
 };
 
@@ -306,7 +279,7 @@ private:
 // N-API Functions
 // ============================================================================
 
-Napi::Value LoadModel(const Napi::CallbackInfo& info) {
+Napi::Value LoadModel(const Napi::CallbackInfo & info) {
     Napi::Env env = info.Env();
 
     if (info.Length() < 2 || !info[0].IsObject() || !info[1].IsFunction()) {
@@ -314,30 +287,26 @@ Napi::Value LoadModel(const Napi::CallbackInfo& info) {
         return env.Null();
     }
 
-    Napi::Object options = info[0].As<Napi::Object>();
+    Napi::Object   options  = info[0].As<Napi::Object>();
     Napi::Function callback = info[1].As<Napi::Function>();
 
-    std::string model_path = options.Get("modelPath").As<Napi::String>().Utf8Value();
-    int n_gpu_layers = options.Has("gpuLayers") ?
-        options.Get("gpuLayers").As<Napi::Number>().Int32Value() : 99;
-    int n_ctx = options.Has("contextSize") ?
-        options.Get("contextSize").As<Napi::Number>().Int32Value() : 0;
-    int n_threads = options.Has("threads") ?
-        options.Get("threads").As<Napi::Number>().Int32Value() : 4;
-    bool debug = options.Has("debug") ?
-        options.Get("debug").As<Napi::Boolean>().Value() : false;
-    std::string chat_template = options.Has("chatTemplate") ?
-        options.Get("chatTemplate").As<Napi::String>().Utf8Value() : "auto";
-    bool embedding = options.Has("embedding") ?
-        options.Get("embedding").As<Napi::Boolean>().Value() : false;
+    std::string model_path   = options.Get("modelPath").As<Napi::String>().Utf8Value();
+    int         n_gpu_layers = options.Has("gpuLayers") ? options.Get("gpuLayers").As<Napi::Number>().Int32Value() : 99;
+    int         n_ctx     = options.Has("contextSize") ? options.Get("contextSize").As<Napi::Number>().Int32Value() : 0;
+    int         n_threads = options.Has("threads") ? options.Get("threads").As<Napi::Number>().Int32Value() : 4;
+    bool        debug     = options.Has("debug") ? options.Get("debug").As<Napi::Boolean>().Value() : false;
+    std::string chat_template =
+        options.Has("chatTemplate") ? options.Get("chatTemplate").As<Napi::String>().Utf8Value() : "auto";
+    bool embedding = options.Has("embedding") ? options.Get("embedding").As<Napi::Boolean>().Value() : false;
 
-    auto worker = new LoadModelWorker(callback, model_path, n_gpu_layers, n_ctx, n_threads, debug, chat_template, embedding);
+    auto worker =
+        new LoadModelWorker(callback, model_path, n_gpu_layers, n_ctx, n_threads, debug, chat_template, embedding);
     worker->Queue();
 
     return env.Undefined();
 }
 
-Napi::Value UnloadModel(const Napi::CallbackInfo& info) {
+Napi::Value UnloadModel(const Napi::CallbackInfo & info) {
     Napi::Env env = info.Env();
 
     if (info.Length() < 1 || !info[0].IsNumber()) {
@@ -349,7 +318,7 @@ Napi::Value UnloadModel(const Napi::CallbackInfo& info) {
 
     {
         std::lock_guard<std::mutex> lock(g_models_mutex);
-        auto it = g_models.find(handle);
+        auto                        it = g_models.find(handle);
         if (it != g_models.end()) {
             g_models.erase(it);
         }
@@ -362,16 +331,16 @@ Napi::Value UnloadModel(const Napi::CallbackInfo& info) {
 std::vector<llama_wrapper::ChatMessage> ParseMessages(Napi::Array messages_arr) {
     std::vector<llama_wrapper::ChatMessage> messages;
     for (uint32_t i = 0; i < messages_arr.Length(); i++) {
-        Napi::Object msg_obj = messages_arr.Get(i).As<Napi::Object>();
+        Napi::Object               msg_obj = messages_arr.Get(i).As<Napi::Object>();
         llama_wrapper::ChatMessage msg;
-        msg.role = msg_obj.Get("role").As<Napi::String>().Utf8Value();
+        msg.role    = msg_obj.Get("role").As<Napi::String>().Utf8Value();
         msg.content = msg_obj.Get("content").As<Napi::String>().Utf8Value();
         messages.push_back(msg);
     }
     return messages;
 }
 
-Napi::Value Generate(const Napi::CallbackInfo& info) {
+Napi::Value Generate(const Napi::CallbackInfo & info) {
     Napi::Env env = info.Env();
 
     if (info.Length() < 3 || !info[0].IsNumber() || !info[1].IsObject() || !info[2].IsFunction()) {
@@ -379,8 +348,8 @@ Napi::Value Generate(const Napi::CallbackInfo& info) {
         return env.Null();
     }
 
-    int handle = info[0].As<Napi::Number>().Int32Value();
-    Napi::Object options = info[1].As<Napi::Object>();
+    int            handle   = info[0].As<Napi::Number>().Int32Value();
+    Napi::Object   options  = info[1].As<Napi::Object>();
     Napi::Function callback = info[2].As<Napi::Function>();
 
     // Parse messages array
@@ -391,14 +360,10 @@ Napi::Value Generate(const Napi::CallbackInfo& info) {
     std::vector<llama_wrapper::ChatMessage> messages = ParseMessages(options.Get("messages").As<Napi::Array>());
 
     llama_wrapper::GenerationParams params;
-    params.max_tokens = options.Has("maxTokens") ?
-        options.Get("maxTokens").As<Napi::Number>().Int32Value() : 256;
-    params.temperature = options.Has("temperature") ?
-        options.Get("temperature").As<Napi::Number>().FloatValue() : 0.7f;
-    params.top_p = options.Has("topP") ?
-        options.Get("topP").As<Napi::Number>().FloatValue() : 0.9f;
-    params.top_k = options.Has("topK") ?
-        options.Get("topK").As<Napi::Number>().Int32Value() : 40;
+    params.max_tokens  = options.Has("maxTokens") ? options.Get("maxTokens").As<Napi::Number>().Int32Value() : 256;
+    params.temperature = options.Has("temperature") ? options.Get("temperature").As<Napi::Number>().FloatValue() : 0.7f;
+    params.top_p       = options.Has("topP") ? options.Get("topP").As<Napi::Number>().FloatValue() : 0.9f;
+    params.top_k       = options.Has("topK") ? options.Get("topK").As<Napi::Number>().Int32Value() : 40;
 
     if (options.Has("stopSequences") && options.Get("stopSequences").IsArray()) {
         Napi::Array stop_arr = options.Get("stopSequences").As<Napi::Array>();
@@ -413,19 +378,20 @@ Napi::Value Generate(const Napi::CallbackInfo& info) {
     return env.Undefined();
 }
 
-Napi::Value GenerateStream(const Napi::CallbackInfo& info) {
+Napi::Value GenerateStream(const Napi::CallbackInfo & info) {
     Napi::Env env = info.Env();
 
-    if (info.Length() < 4 || !info[0].IsNumber() || !info[1].IsObject() ||
-        !info[2].IsFunction() || !info[3].IsFunction()) {
-        Napi::TypeError::New(env, "Expected (handle, options, tokenCallback, doneCallback)").ThrowAsJavaScriptException();
+    if (info.Length() < 4 || !info[0].IsNumber() || !info[1].IsObject() || !info[2].IsFunction() ||
+        !info[3].IsFunction()) {
+        Napi::TypeError::New(env, "Expected (handle, options, tokenCallback, doneCallback)")
+            .ThrowAsJavaScriptException();
         return env.Null();
     }
 
-    int handle = info[0].As<Napi::Number>().Int32Value();
-    Napi::Object options = info[1].As<Napi::Object>();
+    int            handle         = info[0].As<Napi::Number>().Int32Value();
+    Napi::Object   options        = info[1].As<Napi::Object>();
     Napi::Function token_callback = info[2].As<Napi::Function>();
-    Napi::Function done_callback = info[3].As<Napi::Function>();
+    Napi::Function done_callback  = info[3].As<Napi::Function>();
 
     // Parse messages array
     if (!options.Has("messages") || !options.Get("messages").IsArray()) {
@@ -435,14 +401,10 @@ Napi::Value GenerateStream(const Napi::CallbackInfo& info) {
     std::vector<llama_wrapper::ChatMessage> messages = ParseMessages(options.Get("messages").As<Napi::Array>());
 
     llama_wrapper::GenerationParams params;
-    params.max_tokens = options.Has("maxTokens") ?
-        options.Get("maxTokens").As<Napi::Number>().Int32Value() : 256;
-    params.temperature = options.Has("temperature") ?
-        options.Get("temperature").As<Napi::Number>().FloatValue() : 0.7f;
-    params.top_p = options.Has("topP") ?
-        options.Get("topP").As<Napi::Number>().FloatValue() : 0.9f;
-    params.top_k = options.Has("topK") ?
-        options.Get("topK").As<Napi::Number>().Int32Value() : 40;
+    params.max_tokens  = options.Has("maxTokens") ? options.Get("maxTokens").As<Napi::Number>().Int32Value() : 256;
+    params.temperature = options.Has("temperature") ? options.Get("temperature").As<Napi::Number>().FloatValue() : 0.7f;
+    params.top_p       = options.Has("topP") ? options.Get("topP").As<Napi::Number>().FloatValue() : 0.9f;
+    params.top_k       = options.Has("topK") ? options.Get("topK").As<Napi::Number>().Int32Value() : 40;
 
     if (options.Has("stopSequences") && options.Get("stopSequences").IsArray()) {
         Napi::Array stop_arr = options.Get("stopSequences").As<Napi::Array>();
@@ -457,7 +419,7 @@ Napi::Value GenerateStream(const Napi::CallbackInfo& info) {
     return env.Undefined();
 }
 
-Napi::Value IsModelLoaded(const Napi::CallbackInfo& info) {
+Napi::Value IsModelLoaded(const Napi::CallbackInfo & info) {
     Napi::Env env = info.Env();
 
     if (info.Length() < 1 || !info[0].IsNumber()) {
@@ -468,13 +430,13 @@ Napi::Value IsModelLoaded(const Napi::CallbackInfo& info) {
     int handle = info[0].As<Napi::Number>().Int32Value();
 
     std::lock_guard<std::mutex> lock(g_models_mutex);
-    auto it = g_models.find(handle);
-    bool loaded = it != g_models.end() && it->second->is_loaded();
+    auto                        it     = g_models.find(handle);
+    bool                        loaded = it != g_models.end() && it->second->is_loaded();
 
     return Napi::Boolean::New(env, loaded);
 }
 
-Napi::Value Embed(const Napi::CallbackInfo& info) {
+Napi::Value Embed(const Napi::CallbackInfo & info) {
     Napi::Env env = info.Env();
 
     if (info.Length() < 3 || !info[0].IsNumber() || !info[1].IsObject() || !info[2].IsFunction()) {
@@ -482,8 +444,8 @@ Napi::Value Embed(const Napi::CallbackInfo& info) {
         return env.Null();
     }
 
-    int handle = info[0].As<Napi::Number>().Int32Value();
-    Napi::Object options = info[1].As<Napi::Object>();
+    int            handle   = info[0].As<Napi::Number>().Int32Value();
+    Napi::Object   options  = info[1].As<Napi::Object>();
     Napi::Function callback = info[2].As<Napi::Function>();
 
     // Parse texts array
@@ -492,7 +454,7 @@ Napi::Value Embed(const Napi::CallbackInfo& info) {
         return env.Null();
     }
 
-    Napi::Array texts_arr = options.Get("texts").As<Napi::Array>();
+    Napi::Array              texts_arr = options.Get("texts").As<Napi::Array>();
     std::vector<std::string> texts;
     for (uint32_t i = 0; i < texts_arr.Length(); i++) {
         texts.push_back(texts_arr.Get(i).As<Napi::String>().Utf8Value());
@@ -502,6 +464,48 @@ Napi::Value Embed(const Napi::CallbackInfo& info) {
     worker->Queue();
 
     return env.Undefined();
+}
+
+Napi::Value Tokenize(const Napi::CallbackInfo & info) {
+    Napi::Env env = info.Env();
+
+    if (info.Length() < 2 || !info[0].IsNumber() || !info[1].IsObject()) {
+        Napi::TypeError::New(env, "Expected (handle, options)").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    int          handle  = info[0].As<Napi::Number>().Int32Value();
+    Napi::Object options = info[1].As<Napi::Object>();
+
+    if (!options.Has("text") || !options.Get("text").IsString()) {
+        Napi::TypeError::New(env, "Expected text string in options").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    std::string text    = options.Get("text").As<Napi::String>().Utf8Value();
+    bool        add_bos = options.Has("addBos") ? options.Get("addBos").As<Napi::Boolean>().Value() : true;
+
+    llama_wrapper::LlamaModel * model = nullptr;
+
+    {
+        std::lock_guard<std::mutex> lock(g_models_mutex);
+        auto                        it = g_models.find(handle);
+        if (it == g_models.end()) {
+            Napi::Error::New(env, "Invalid model handle").ThrowAsJavaScriptException();
+            return env.Null();
+        }
+        model = it->second.get();
+    }
+
+    std::vector<int32_t> tokens = model->tokenize(text, add_bos);
+
+    // Create Int32Array result
+    Napi::Int32Array result = Napi::Int32Array::New(env, tokens.size());
+    for (size_t i = 0; i < tokens.size(); i++) {
+        result[i] = tokens[i];
+    }
+
+    return result;
 }
 
 // ============================================================================
@@ -515,8 +519,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set("generateStream", Napi::Function::New(env, GenerateStream));
     exports.Set("isModelLoaded", Napi::Function::New(env, IsModelLoaded));
     exports.Set("embed", Napi::Function::New(env, Embed));
+    exports.Set("tokenize", Napi::Function::New(env, Tokenize));
     return exports;
 }
 
 NODE_API_MODULE(llama_binding, Init)
-

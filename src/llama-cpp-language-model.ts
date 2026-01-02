@@ -17,6 +17,7 @@ import {
   generate,
   generateStream,
   isModelLoaded,
+  tokenize,
   type LoadModelOptions,
   type GenerateOptions,
   type ChatMessage,
@@ -198,6 +199,17 @@ export class LlamaCppLanguageModel implements LanguageModelV3 {
       unloadModel(this.modelHandle);
       this.modelHandle = null;
     }
+  }
+
+  /**
+   * Tokenize a text string into token IDs.
+   * @param text The text to tokenize
+   * @param addBos Whether to add a beginning-of-sequence token (default: true)
+   * @returns An Int32Array of token IDs
+   */
+  async tokenize(text: string, addBos: boolean = true): Promise<Int32Array> {
+    const handle = await this.ensureModelLoaded();
+    return tokenize(handle, { text, addBos });
   }
 
   async doGenerate(

@@ -58,6 +58,11 @@ export interface EmbedResult {
   totalTokens: number;
 }
 
+export interface TokenizeOptions {
+  text: string;
+  addBos?: boolean;
+}
+
 interface NativeBinding {
   loadModel(options: LoadModelOptions, callback: (error: string | null, handle: number | null) => void): void;
   unloadModel(handle: number): boolean;
@@ -71,6 +76,8 @@ interface NativeBinding {
   isModelLoaded(handle: number): boolean;
   // Embedding functions
   embed(handle: number, options: EmbedOptions, callback: (error: string | null, result: EmbedResult | null) => void): void;
+  // Tokenization functions
+  tokenize(handle: number, options: TokenizeOptions): Int32Array;
 }
 
 export function loadModel(options: LoadModelOptions): Promise<number> {
@@ -144,5 +151,9 @@ export function embed(handle: number, options: EmbedOptions): Promise<EmbedResul
       }
     });
   });
+}
+
+export function tokenize(handle: number, options: TokenizeOptions): Int32Array {
+  return binding.tokenize(handle, options);
 }
 
