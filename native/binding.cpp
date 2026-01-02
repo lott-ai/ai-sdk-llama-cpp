@@ -321,7 +321,7 @@ Napi::Value LoadModel(const Napi::CallbackInfo& info) {
     int n_gpu_layers = options.Has("gpuLayers") ?
         options.Get("gpuLayers").As<Napi::Number>().Int32Value() : 99;
     int n_ctx = options.Has("contextSize") ?
-        options.Get("contextSize").As<Napi::Number>().Int32Value() : 2048;
+        options.Get("contextSize").As<Napi::Number>().Int32Value() : 0;
     int n_threads = options.Has("threads") ?
         options.Get("threads").As<Napi::Number>().Int32Value() : 4;
     bool debug = options.Has("debug") ?

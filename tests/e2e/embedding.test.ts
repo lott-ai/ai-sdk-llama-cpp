@@ -29,7 +29,7 @@ describeE2E("E2E Embedding Tests", () => {
     model = llamaCpp.embedding({
       modelPath: TEST_EMBEDDING_PATH,
       contextSize: 2048,
-      gpuLayers: 0, // Use CPU for CI compatibility
+      gpuLayers: process.env.CI ? 0 : 99, // Use CPU for CI compatibility
       threads: 4,
     });
   });
@@ -47,6 +47,20 @@ describeE2E("E2E Embedding Tests", () => {
         const { embedding, usage } = await embed({
           model,
           value: "Hello, world!",
+        });
+
+        expect(embedding.length).toBeGreaterThan(0);
+        expect(usage.tokens).toBeGreaterThan(0);
+      },
+      { timeout: 120000 }
+    );
+
+    it(
+      "embeds really long text",
+      async () => {
+        const { embedding, usage } = await embed({
+          model,
+          value: "Hello, world! ".repeat(1000),
         });
 
         expect(embedding.length).toBeGreaterThan(0);
